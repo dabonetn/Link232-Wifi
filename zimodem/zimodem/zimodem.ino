@@ -13,16 +13,8 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 */
-
-
-// Changes from Zimodem for Link232-wifi
-// Disable rs232 inversion for esp8266
-// changed web address for updates to prevent bricking of units due to the above change.
-// changed ident sting to report Link232-Wifi Zimodem
-
-
 //#define TCP_SND_BUF                     4 * TCP_MSS
-#define ZIMODEM_VERSION "3.5.3"
+#define ZIMODEM_VERSION "3.5.5"
 const char compile_date[] = __DATE__ " " __TIME__;
 #define DEFAULT_NO_DELAY true
 #define null 0
@@ -83,7 +75,7 @@ const char compile_date[] = __DATE__ " " __TIME__;
 # define DEFAULT_PIN_CTS 5 // is 0 for ESP-01, see getDefaultCtsPin() below.
 # define DEFAULT_PIN_DCD 2
 # define DEFAULT_FCT FCT_RTSCTS
-// # define RS232_INVERTED 1
+//# define RS232_INVERTED 1
 # define debugPrintf doNothing
 # define preEOLN(...)
 # define echoEOLN(...) serial.prints(EOLN)
@@ -108,7 +100,7 @@ const char compile_date[] = __DATE__ " " __TIME__;
 # define DEFAULT_CTS_HIGH  LOW
 # define DEFAULT_CTS_LOW  HIGH
 # define DEFAULT_RTS_HIGH  LOW
-# define DEFAULT_RTS_LOW HIGH
+# define DEFAULT_RTS_LOW  HIGH
 # define DEFAULT_RI_HIGH  LOW
 # define DEFAULT_RI_LOW  HIGH
 # define DEFAULT_DSR_HIGH  LOW

@@ -16,13 +16,14 @@
 
 size_t ZPrint::writeStr(char *s)
 {
-  if(wifiSock != null)
+  if(outStream != null)
   {
     int len=strlen(s);
-    for(int i=0;i<len;i++)
+    outStream->write((uint8_t *)s,len);
+    if(logFileOpen)
     {
-      wifiSock->write(s[i]);
-      logSocketOut(s[i]);
+      for(int i=0;i<len;i++)
+        logSocketOut(s[i]);
     }
     return len;
   }
@@ -64,16 +65,24 @@ void ZPrint::setTimeoutDelayMs(int ms)
 size_t ZPrint::writeChunk(char *s, int len)
 {
   char buf[25];
-  debugPrintf("Write chunk: %d\n",len);
   sprintf(buf,"%x\r\n",len);
   writeStr(buf);
-  for(int i=0;i<len;i++)
+  outStream->write((uint8_t *)s,len);
+  if(logFileOpen)
   {
-    wifiSock->write(s[i]);
-    logSocketOut(s[i]);
+    for(int i=0;i<len;i++)
+      logSocketOut(s[i]);
   }
   writeStr("\r\n");
   return len+strlen(buf)+4;
+}
+
+void ZPrint::announcePrintJob(const char *hostIp, const int port, const char *req)
+{
+  logPrintfln("Print Request to host=%s, port=%d",hostIp,port);
+  debugPrintf("Print Request to host=%s, port=%d\n",hostIp,port);
+  logPrintfln("Print Request is /%s",req);
+  debugPrintf("Print Request is /%s\n",req);
 }
 
 ZResult ZPrint::switchToPostScript(char *prefix)
@@ -94,14 +103,33 @@ ZResult ZPrint::switchToPostScript(char *prefix)
     free(workBuf);
     return ZERROR;
   }
-  
   payloadType = RAW;
-  ZResult result = finishSwitchTo(hostIp, req, port, doSSL);
-  free(workBuf);
+  announcePrintJob(hostIp,port,req);
+  ZResult result;
+  if(pinSupport[pinRTS])
+    s_pinWrite(pinRTS, rtsInactive);
+  yield();
+  wifiSock = new WiFiClientNode(hostIp,port,doSSL?FLAG_SECURE:0);
+  wifiSock->setNoDelay(false); // we want a delay in this case
+  outStream = wifiSock;
+  result = finishSwitchTo(hostIp, req, port, doSSL);
+  if(result == ZERROR)
+  {
+    outStream = null;
+    delete wifiSock;
+    wifiSock = null;
+  }
+  yield();
+  if(pinSupport[pinRTS])
+    s_pinWrite(pinRTS, rtsActive);
   if((result != ZERROR)
   &&(prefix != 0)
   &&(strlen(prefix)>0))
+  {
     writeChunk(prefix,strlen(prefix));
+    serialIncoming();
+  }
+  free(workBuf);
   return result;
 }
 
@@ -160,23 +188,22 @@ ZResult ZPrint::switchTo(char *vbuf, int vlen, bool petscii)
   }
   if(newUrl)
     setLastPrinterSpec(vbuf);
+  
+  wifiSock = new WiFiClientNode(hostIp,port,doSSL?FLAG_SECURE:0);
+  wifiSock->setNoDelay(false); // we want a delay in this case
+  outStream = wifiSock;
+  announcePrintJob(hostIp,port,req);
   ZResult result = finishSwitchTo(hostIp, req, port, doSSL);
   free(workBuf);
+  if(result == ZERROR)
+    delete wifiSock;
   return result;
 }
 
 ZResult ZPrint::finishSwitchTo(char *hostIp, char *req, int port, bool doSSL)
 {
-  wifiSock = new WiFiClientNode(hostIp,port,doSSL?FLAG_SECURE:0);
-  logPrintfln("Print Request to host=%s, port=%d",hostIp,port);
-  debugPrintf("Print Request to host=%s, port=%d\n",hostIp,port);
-  logPrintfln("Print Request is /%s",req);
-  debugPrintf("Print Request is /%s\n",req);
-  if(!wifiSock->isConnected())
-  {
-    delete wifiSock;
+  if((wifiSock != null) && (!wifiSock->isConnected()))
     return ZERROR;
-  }
   char portStr[10];
   sprintf(portStr,"%d",port);
   // send the request and http headers:
@@ -190,13 +217,10 @@ ZResult ZPrint::finishSwitchTo(char *hostIp, char *req, int port, bool doSSL)
   writeStr("User-Agent: Zimodem\r\n");
   writeStr("Accept-Encoding: gzip,deflate\r\n");
   writeStr("\r\n");
+  outStream->flush();
   // send the ipp header
-  wifiSock->flush();
-  if(!wifiSock->isConnected())
-  {
-    delete wifiSock;
+  if((wifiSock != null)&&(!wifiSock->isConnected()))
     return ZERROR;
-  }
   
   char jobChar1 = '0' + (jobNum / 10);
   char jobChar2 = '0' + (jobNum % 10);
@@ -223,12 +247,9 @@ ZResult ZPrint::finishSwitchTo(char *hostIp, char *req, int port, bool doSSL)
   writeChunk(pbuf,30);
   sprintf(pbuf,"%c%c%coutput-mode%c%cmonochrome%c",0x44,0x00,0x0b,0x00,0x0a,     0x03);
   writeChunk(pbuf,27);
-  wifiSock->flush();
-  if(!wifiSock->isConnected())
-  {
-    delete wifiSock;
+  outStream->flush();
+  if((wifiSock != null)&&(!wifiSock->isConnected()))
     return ZERROR;
-  }
   checkOpenConnections();
   checkBaudChange();
   pdex=0;
@@ -302,7 +323,8 @@ void ZPrint::serialIncoming()
       lastC=c;
       if(pdex>=250)
       {
-        if((wifiSock!=null)&&(wifiSock->isConnected()))
+        if(((wifiSock!=null)&&(wifiSock->isConnected()))
+        ||((wifiSock==null)&&(outStream!=null)))
         {
           writeChunk(pbuf,pdex);
           //wifiSock->flush();
@@ -319,21 +341,24 @@ void ZPrint::serialIncoming()
 
 void ZPrint::switchBackToCommandMode(bool error)
 {
-  if(wifiSock != null)
+  if((wifiSock != null)||(outStream!=null))
   {
     if(error)
       commandMode.sendOfficialResponse(ZERROR);
     else
       commandMode.sendOfficialResponse(ZOK);
-    delete wifiSock;
+    if(wifiSock != null)
+      delete wifiSock;
   }
   wifiSock = null;
+  outStream = null;
   currMode = &commandMode;
 }
 
 void ZPrint::loop()
 {
-  if((wifiSock==null) || (!wifiSock->isConnected()))
+  if(((wifiSock==null)&&(outStream==null))
+  || ((wifiSock!=null)&&(!wifiSock->isConnected())))
   {
     debugPrintf("No printer connection\n");
     switchBackToCommandMode(true);
@@ -345,7 +370,7 @@ void ZPrint::loop()
     if(pdex > 0)
       writeChunk(pbuf,pdex);
     writeStr("0\r\n\r\n");
-    wifiSock->flush();
+    outStream->flush();
     switchBackToCommandMode(false);
   }
   checkBaudChange();
