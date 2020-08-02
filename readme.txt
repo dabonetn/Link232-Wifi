@@ -46,32 +46,10 @@ Link232-Wifi is based off the ESP-12, not the ESP32, so No esp32 only features w
 
 Changes I've made.
 
-zimodem.ino
+In Zimodem.ino I've set CTS/RTS and 19200 baud as standard, and got rid of the signal inversion while using a ESP8266 module.
 
-Set default flow control to RTS/CTS
-# define DEFAULT_FCT FCT_RTSCTS
+Zcommand.ino has many changes, first is replacing the zimmers.net with dabone.xyz to prevent a update and bricking of the Link232-Wifi.
+Also bug fixes for DCD on ata connect, and NO CARRIER printing while hardware flow control is enabled.
 
-Comment out RS232_INVERTED to prevent inverted signals using the esp12
-// # define RS232_INVERTED 1
-
-
-2. Changing the default baud rate to 19200
-#define DEFAULT_BAUD_RATE 19200
-
-
-
-zcommand.ino
-
-1. Changing the address for firmware updates to keep people from locking up their units by installing inverted firmware. If the DCD line on the 6551 isn't held low by default, the chip is disabled.
-#ifdef ZIMODEM_ESP32
-  if((!doWebGetBytes("www.dabone.xyz", 80, "/otherprojs/guru-latest-version.txt", false, buf, &bufSize))||(bufSize<=0))
-    return ZERROR;
-#else
-  if((!doWebGetBytes("www.dabone.xyz", 80, "/otherprojs/c64net-latest-version.txt", false, buf, &bufSize))||(bufSize<=0))
-    return ZERROR;
-#endif
-
-2. Changing the firmare response
-  serial.prints("Link232-Wifi Zimodem Firmware v");
 
 
