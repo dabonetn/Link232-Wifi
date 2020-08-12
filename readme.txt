@@ -6,6 +6,10 @@ Is a Swiftlink compatible High Speed Uart cartridge for the Commodore 64/128.
 
 Uses swiftlink drivers in your favorite terminal program/bbs.
 
+Premade units are available on my Tindie store.
+
+https://www.tindie.com/stores/dabone/
+
 Default for most programs is de00/nmi
 Because it's a link232 clone, it only uses 16 bytes of the dXXX address space, and you can set it using the solder jumpers. 
 You must cut the dx00 link and then connect the solder jumper you want the new address to be.
