@@ -5,7 +5,7 @@
    you may not use this file except in compliance with the License.
    You may obtain a copy of the License at
 
-	   http://www.apache.org/licenses/LICENSE-2.0
+     http://www.apache.org/licenses/LICENSE-2.0
 
    Unless required by applicable law or agreed to in writing, software
    distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +14,7 @@
    limitations under the License.
 */
 //#define TCP_SND_BUF                     4 * TCP_MSS
-#define ZIMODEM_VERSION "3.5.5"
+#define ZIMODEM_VERSION "3.5.6.1"
 const char compile_date[] = __DATE__ " " __TIME__;
 #define DEFAULT_NO_DELAY true
 #define null 0
@@ -319,6 +319,7 @@ static int checkOpenConnections()
     if((dcdStatus == dcdActive)
     &&(dcdStatus != dcdInactive))
     {
+      logPrintfln("DCD going inactive.\n");
       dcdStatus = dcdInactive;
       s_pinWrite(pinDCD,dcdStatus);
       if(baudState == BS_SWITCHED_TEMP)
@@ -332,6 +333,7 @@ static int checkOpenConnections()
     if((dcdStatus == dcdInactive)
     &&(dcdStatus != dcdActive))
     {
+      logPrintfln("DCD going active.\n");
       dcdStatus = dcdActive;
       s_pinWrite(pinDCD,dcdStatus);
       if((tempBaud > 0) && (baudState == BS_NORMAL))
@@ -378,6 +380,9 @@ void setup()
     debugPrintf("SPIFFS Formatted.");
   }
   HWSerial.begin(DEFAULT_BAUD_RATE, DEFAULT_SERIAL_CONFIG);  //Start Serial
+#ifdef ZIMODEM_ESP8266
+  HWSerial.setRxBufferSize(1024);
+#endif
   commandMode.loadConfig();
   PhoneBookEntry::loadPhonebook();
   dcdStatus = dcdInactive;

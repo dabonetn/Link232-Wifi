@@ -15,8 +15,6 @@
 */
 extern "C" void esp_schedule();
 extern "C" void esp_yield();
-# define FLOWTEMPVAL = DEFAULT_FCT;
-
 
 ZCommand::ZCommand()
 {
@@ -795,7 +793,7 @@ ZResult ZCommand::doConnectCommand(int vval, uint8_t *vbuf, int vlen, bool isNum
         serial.prints("NO CARRIER ");
         serial.printf("%d %s:%d",current->id,current->host,current->port);
         serial.prints(EOLN);
-        HWSerial.flush(); //Wait for String to complete.
+        serial.flush();
       }
       return ZIGNORE;
     }
@@ -840,7 +838,7 @@ ZResult ZCommand::doConnectCommand(int vval, uint8_t *vbuf, int vlen, bool isNum
           serial.prints("NO CARRIER ");
           serial.printf("%d %s:%d",c->id,c->host,c->port);
           serial.prints(EOLN);
-          HWSerial.flush(); //Wait for String to complete.
+          serial.flush();
         }
         c=c->next;
       }
@@ -1495,9 +1493,10 @@ ZResult ZCommand::doAnswerCommand(int vval, uint8_t *vbuf, int vlen, bool isNumb
         if((c->isConnected())
         &&(c->id = lastServerClientId))
         {
-          dcdStatus=!dcdStatus;             // Add DCD Support to the ATA Command
-          s_pinWrite(pinDCD,dcdStatus);     // 			
           current=c;
+          checkOpenConnections();
+          dcdStatus=!dcdStatus;             // Add DCD Support to the ATA Command
+          s_pinWrite(pinDCD,dcdStatus);     // 
           streamMode.switchTo(c);
           lastServerClientId=0;
           if(ringCounter == 0)
@@ -2682,7 +2681,7 @@ ZResult ZCommand::doSerialCommand()
     if(result != ZIGNORE_SPECIAL)
       previousCommand = saveCommand;
     if((suppressResponses)&&(result == ZERROR))
-        return ZERROR;
+      return ZERROR;
     if(crc8 >= 0)
       result=ZERROR; // setting S42 without a T command is now Bad.
     if((result != ZOK)||(index >= len))
@@ -2745,7 +2744,7 @@ void ZCommand::showInitMessage()
 #ifdef RS232_INVERTED
   serial.prints("C64Net WiFi Firmware v");
 #else
-  serial.prints("Link232-Wifi Zimodem Firmware v");
+  serial.prints("Link232-Wifi Firmware v");
 #endif
 #endif
   HWSerial.setTimeout(60000);
@@ -3007,7 +3006,7 @@ bool ZCommand::checkPlusEscape()
             serial.prints("NO CARRIER ");
             serial.printf("%d %s:%d",current->id,current->host,current->port);
             serial.prints(EOLN);
-            HWSerial.flush(); //Wait for String to complete.			
+            serial.flush();
           }
         }
         delete current;
@@ -3127,7 +3126,13 @@ void ZCommand::sendNextPacket()
           else
           if(nextConn->isAnswered())
           {
-            if(serial.getFlowControlType() == FCT_RTSCTS)             // Ugly Hack to give the Link-232 Wifi 6551 chip time to show the NO CARRIER String
+            preEOLN(EOLN);
+            serial.prints("NO CARRIER ");
+            serial.printi(nextConn->id);
+            serial.prints(EOLN);
+            serial.flush();
+			
+              if(serial.getFlowControlType() == FCT_RTSCTS)             // Ugly Hack to give the Link-232 Wifi 6551 chip time to show the NO CARRIER String
                 {                                                     //
                     serial.setFlowControlType(FCT_DISABLED);          //
                     preEOLN(EOLN);                                    //
@@ -3144,7 +3149,9 @@ void ZCommand::sendNextPacket()
                             serial.printi(nextConn->id);
                             serial.prints(EOLN);
                             HWSerial.flush(); //Wait for String to complete.
-                     }
+ 
+
+          }
           if(serial.getFlowControlType() == FCT_MANUAL)
           {
             return;
@@ -3354,3 +3361,4 @@ void ZCommand::loop()
   }
   checkBaudChange();
 }
+

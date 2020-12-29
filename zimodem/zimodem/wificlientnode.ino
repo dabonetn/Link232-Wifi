@@ -59,7 +59,6 @@ void WiFiClientNode:: setNoDelay(bool tf)
     clientPtr->setNoDelay(tf);
 }
 
-
 WiFiClientNode::WiFiClientNode(WiFiClient newClient, int flagsBitmap, int ringDelay)
 {
   this->flagsBitmap = flagsBitmap;
@@ -189,7 +188,7 @@ int WiFiClientNode::read()
     return b;
   }
   int c = client.read();
-  fillUnderflowBuf();
+  //fillUnderflowBuf();
   return c;
 }
 
@@ -247,7 +246,7 @@ int WiFiClientNode::read(uint8_t *buf, size_t size)
     return previouslyRead;
 
   int bytesRead = client.read(buf,size);
-  fillUnderflowBuf();
+  //fillUnderflowBuf();
   return previouslyRead + bytesRead;
 }
 
