@@ -41,7 +41,12 @@ Hardware Flow Control (CTS/RTS)
 
 
 
-The current zimodem firmware is forked from version "3.5.5"
+The current zimodem firmware is forked from version "3.5.6"
+
+To update to the current firmware use the command
+
+at&u6502
+
 
 For usage of zimodem, see the readme in the zimodem directory.
 Link232-Wifi is based off the ESP-12, not the ESP32, so No esp32 only features will work.
