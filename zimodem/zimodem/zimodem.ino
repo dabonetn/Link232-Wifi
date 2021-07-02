@@ -11,10 +11,10 @@
    distributed under the License is distributed on an "AS IS" BASIS,
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
-   limitations under the License.
+   limitations under the License. 
 */
 //#define TCP_SND_BUF                     4 * TCP_MSS
-#define ZIMODEM_VERSION "3.5.6.1"
+#define ZIMODEM_VERSION "3.6.3"
 const char compile_date[] = __DATE__ " " __TIME__;
 #define DEFAULT_NO_DELAY true
 #define null 0
@@ -37,6 +37,24 @@ const char compile_date[] = __DATE__ " " __TIME__;
 # define ZIMODEM_ESP8266
 #endif
 
+#ifdef SUPPORT_LED_PINS
+# ifdef GPIO_NUM_0
+#   define DEFAULT_PIN_AA GPIO_NUM_16
+#   define DEFAULT_PIN_HS GPIO_NUM_15
+#   define DEFAULT_PIN_WIFI GPIO_NUM_0
+# else
+#   define DEFAULT_PIN_AA 16
+#   define DEFAULT_PIN_HS 15
+#   define DEFAULT_PIN_WIFI 0
+# endif
+# define DEFAULT_HS_BAUD 38400
+# define DEFAULT_AA_ACTIVE LOW
+# define DEFAULT_AA_INACTIVE HIGH
+# define DEFAULT_HS_ACTIVE LOW
+# define DEFAULT_HS_INACTIVE HIGH
+# define DEFAULT_WIFI_ACTIVE LOW
+# define DEFAULT_WIFI_INACTIVE HIGH
+#endif
 
 #ifdef ZIMODEM_ESP32
 # define PIN_FACTORY_RESET GPIO_NUM_0
@@ -65,7 +83,7 @@ const char compile_date[] = __DATE__ " " __TIME__;
 # define UART_NB_STOP_BIT_2    0B00110000
 # define preEOLN serial.prints
 # define echoEOLN serial.write
-# define HARD_DCD_HIGH 1
+//# define HARD_DCD_HIGH 1
 //# define HARD_DCD_LOW 1
 #else  // ESP-8266, e.g. ESP-01, ESP-12E, inverted for C64Net WiFi Modem
 # define DEFAULT_PIN_DSR 13
@@ -141,6 +159,7 @@ class ZMode
 #ifdef INCLUDE_SD_SHELL
 #include "proto_xmodem.h"
 #include "proto_zmodem.h"
+#include "proto_kermit.h"
 #include "zbrowser.h"
 #endif
 
@@ -150,6 +169,7 @@ static PhoneBookEntry *phonebook = null;
 static bool pinSupport[MAX_PIN_NO];
 static bool browseEnabled = false;
 static String termType = DEFAULT_TERMTYPE;
+static String busyMsg = DEFAULT_BUSYMSG;
 
 static ZMode *currMode = null;
 static ZStream streamMode;
@@ -174,6 +194,10 @@ static bool wifiConnected =false;
 static String wifiSSI;
 static String wifiPW;
 static String hostname;
+static IPAddress *staticIP = null;
+static IPAddress *staticDNS = null;
+static IPAddress *staticGW = null;
+static IPAddress *staticSN = null;
 static SerialConfig serialConfig = DEFAULT_SERIAL_CONFIG;
 static int baudRate=DEFAULT_BAUD_RATE;
 static int dequeSize=1+(DEFAULT_BAUD_RATE/INTERNAL_FLOW_CONTROL_DIV);
@@ -233,7 +257,23 @@ static void setHostName(const char *hname)
 #endif
 }
 
-static bool connectWifi(const char* ssid, const char* password)
+static void setNewStaticIPs(IPAddress *ip, IPAddress *dns, IPAddress *gateWay, IPAddress *subNet)
+{
+  if(staticIP != null)
+    free(staticIP);
+  staticIP = ip;
+  if(staticDNS != null)
+    free(staticDNS);
+  staticDNS = dns;
+  if(staticGW != null)
+    free(staticGW);
+  staticGW = gateWay;
+  if(staticSN != null)
+    free(staticSN);
+  staticSN = subNet;
+}
+
+static bool connectWifi(const char* ssid, const char* password, IPAddress *ip, IPAddress *dns, IPAddress *gateWay, IPAddress *subNet)
 {
   while(WiFi.status() == WL_CONNECTED)
   {
@@ -246,6 +286,11 @@ static bool connectWifi(const char* ssid, const char* password)
     setHostName(hostname.c_str());
 #endif
   WiFi.mode(WIFI_STA);
+  if((ip != null)&&(gateWay != null)&&(dns != null)&&(subNet!=null))
+  {
+    if(!WiFi.config(*ip,*gateWay,*subNet,*dns))
+      return false;
+  }
   WiFi.begin(ssid, password);
   if(hostname.length() > 0)
     setHostName(hostname.c_str());
@@ -261,6 +306,9 @@ static bool connectWifi(const char* ssid, const char* password)
   wifiConnected = amConnected;
   if(!amConnected)
     WiFi.disconnect();
+#ifdef SUPPORT_LED_PINS
+  s_pinWrite(DEFAULT_PIN_WIFI,wifiConnected?DEFAULT_WIFI_ACTIVE:DEFAULT_WIFI_INACTIVE);
+#endif
   return wifiConnected;
 }
 
@@ -293,6 +341,9 @@ static void changeBaudRate(int baudRate)
   HWSerial.changeBaudRate(baudRate);
 #else
   HWSerial.begin(baudRate, serialConfig);  //Change baud rate
+#endif
+#ifdef SUPPORT_LED_PINS
+  s_pinWrite(DEFAULT_PIN_HS,(baudRate>=DEFAULT_HS_BAUD)?DEFAULT_HS_ACTIVE:DEFAULT_HS_INACTIVE);
 #endif  
 }
 
@@ -366,7 +417,7 @@ void setup()
   {
     pinSupport[4]=true;
     pinSupport[5]=true;
-    for(int i=9;i<=15;i++)
+    for(int i=9;i<=16;i++)
       pinSupport[i]=true;
     pinSupport[11]=false;
   }
@@ -388,6 +439,10 @@ void setup()
   dcdStatus = dcdInactive;
   s_pinWrite(pinDCD,dcdStatus);
   flushSerial();
+#ifdef SUPPORT_LED_PINS
+  s_pinWrite(DEFAULT_PIN_WIFI,(WiFi.status() == WL_CONNECTED)?DEFAULT_WIFI_ACTIVE:DEFAULT_WIFI_INACTIVE);
+  s_pinWrite(DEFAULT_PIN_HS,(baudRate>=DEFAULT_HS_BAUD)?DEFAULT_HS_ACTIVE:DEFAULT_HS_INACTIVE);
+#endif
 }
 
 void checkFactoryReset()
@@ -406,7 +461,8 @@ void checkFactoryReset()
         else
         if((millis() - resetPushTimer) > 5000)
         {
-          SPIFFS.remove("/zconfig.txt");
+          SPIFFS.remove(CONFIG_FILE);
+          SPIFFS.remove(CONFIG_FILE_OLD);
           SPIFFS.remove("/zphonebook.txt");
           SPIFFS.remove("/zlisteners.txt");
           PhoneBookEntry::clearPhonebook();

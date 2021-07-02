@@ -135,7 +135,7 @@ void ZSerial::setFlowControlType(FlowControlType type)
     //debugPrintf("invert = %d magic values = %d %d, RTS_HIGH=%d, RTS_LOW=%d HIGHHIGH=%d LOWLOW=%d\n",invertMask,ctsActive,rtsActive, DEFAULT_RTS_HIGH, DEFAULT_RTS_LOW, HIGH, LOW);
     if(invertMask != 0)
       uart_set_line_inverse(UART_NUM_2, invertMask);
-    const int CUTOFF = 5;
+    const int CUTOFF = 100;
     if(pinSupport[pinRTS])
     {
       if(pinSupport[pinCTS])
@@ -160,6 +160,16 @@ FlowControlType ZSerial::getFlowControlType()
 void ZSerial::setXON(bool isXON)
 {
   XON_STATE = isXON;
+}
+
+int ZSerial::getConfigFlagBitmap()
+{
+  return 
+       (isPetsciiMode()?FLAG_PETSCII:0)
+      |((getFlowControlType()==FCT_RTSCTS)?FLAG_RTSCTS:0)
+      |((getFlowControlType()==FCT_NORMAL)?FLAG_XONXOFF:0)
+      |((getFlowControlType()==FCT_AUTOOFF)?FLAG_XONXOFF:0)
+      |((getFlowControlType()==FCT_MANUAL)?FLAG_XONXOFF:0);
 }
 
 bool ZSerial::isXON()

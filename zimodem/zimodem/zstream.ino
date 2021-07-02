@@ -54,36 +54,43 @@ bool ZStream::isDisconnectedOnStreamExit()
   return (current != null) && (current->isDisconnectedOnStreamExit());
 }
 
-// We want to make sure that if we're seeing an escape sequence, we read it from
-// the serial completely before sending it out on the network in order to avoid
-// sending it out as multiple packets.  This is needed because the TCP/IP stack
-// will wait for each TCP packed to be acknowledge to send the next one.  If the
-// connection lag is long, splitting the escape sequence into multiple packets
-// can cause a time gap between the escape and the rest of the sequence which
-// makes the receiving end think that the escape key was pressed individually.
-// To avoid the problem, if we read the an escape character, we delay for 1ms
-// and then read the rest of the escape sequence from the serial port, if any,
-// to send it to the socket in one go.
+void ZStream::baudDelay()
+{
+  if(baudRate<1200)
+    delay(5);
+  else
+  if(baudRate==1200)
+    delay(3);
+  else
+    delay(1);
+  yield();
+}
 
 void ZStream::serialIncoming()
 {
-  uint8_t buf[escSeqBufSize];
-  bool escRead = false;
-  int bytesRead = 0;
   int bytesAvailable = HWSerial.available();
   if(bytesAvailable == 0)
     return;
+  uint8_t escBufDex = 0;
   while(--bytesAvailable >= 0)
   {
-    uint8_t c = HWSerial.read();
-    if (c == 27) {
-      if (escRead) {
-        // new escape sequence, flush what we've read so far
-        socketWrite(buf, bytesRead);
-        bytesRead = 0;
-      } else {
-        escRead = true;
-        delay(1);
+    uint8_t c=HWSerial.read();
+    if(((c==27)||(escBufDex>0))
+    &&(!isPETSCII()))
+    {
+      escBuf[escBufDex++] = c;
+      if(((c>='a')&&(c<='z'))
+      ||((c>='A')&&(c<='Z'))
+      ||(escBufDex>=ZSTREAM_ESC_BUF_MAX)
+      ||((escBufDex==2)&&(c!='[')))
+      {
+        logSerialIn(c);
+        break;
+      }
+      if(bytesAvailable==0)
+      {
+        baudDelay();
+        bytesAvailable=HWSerial.available();
       }
     }
     logSerialIn(c);
@@ -107,17 +114,13 @@ void ZStream::serialIncoming()
         serial.printb(c);
       if(isPETSCII())
         c = petToAsc(c);
-      buf[bytesRead++] = c;
-      if (bytesRead == escSeqBufSize) {
-        socketWrite(buf, bytesRead);
-        bytesRead = 0;
-      }
+      if(escBufDex==0)
+        socketWrite(c);
     }
   }
-  if (bytesRead) {
-    socketWrite(buf, bytesRead);
-  }
 
+  if(escBufDex>0)
+    socketWrite(escBuf,escBufDex);
   currentExpiresTimeMs = 0;
   if(plussesInARow==3)
     currentExpiresTimeMs=millis()+800;
@@ -149,21 +152,38 @@ void ZStream::switchBackToCommandMode(bool logout)
   currMode = &commandMode;
 }
 
-void ZStream::socketWrite(uint8_t* buf, size_t count)
+void ZStream::socketWrite(uint8_t *buf, uint8_t len)
 {
   if(current->isConnected())
   {
-    uint8_t telnetEscapedBuf[count * 2];
-    size_t outputCount = 0;
-    for (size_t i = 0; i < count; i++) {
-      if (buf[i] == 0xFF && isTelnet()) {
-        logSocketOut(buf[i]);
-        telnetEscapedBuf[outputCount++] = buf[i];
+    uint8_t escapedBuf[len*2];
+    if(isTelnet())
+    {
+      int eDex=0;
+      for(int i=0;i<len;i++)
+      {
+          escapedBuf[eDex++] = buf[i];
+          if(buf[i]==0xff)
+            escapedBuf[eDex++] = buf[i];
       }
-      logSocketOut(buf[i]);
-      telnetEscapedBuf[outputCount++] = buf[i];
+      buf=escapedBuf;
+      len=eDex;
     }
-    current->write(telnetEscapedBuf, outputCount);
+    for(int i=0;i<len;i++)
+      logSocketOut(buf[i]);
+    current->write(buf,len);
+    nextFlushMs=millis()+250;
+  }
+}
+
+void ZStream::socketWrite(uint8_t c)
+{
+  if(current->isConnected())
+  {
+    if(c == 0xFF && isTelnet()) 
+      current->write(c);
+    current->write(c);
+    logSocketOut(c);
     nextFlushMs=millis()+250;
     //current->flush(); // rendered safe by available check
     //delay(0);
@@ -195,12 +215,7 @@ void ZStream::loop()
           c=c->next;
         }
         if(!found)
-        {
-          newClient.write(busyMsg.c_str());
-          newClient.flush();
-          //can't confirm this even works...
-          newClient.stop();
-        }
+          new WiFiClientNode(newClient, serv->flagsBitmap, 5); // constructing is enough
       }
     }
     serv=serv->next;
@@ -211,15 +226,19 @@ void ZStream::loop()
   while(conn != null)
   {
     WiFiClientNode *nextConn = conn->next;
-    if((!conn->isAnswered())&&(conn->isConnected())&&(conn!=current))
+    if((!conn->isAnswered())
+    &&(conn->isConnected())
+    &&(conn!=current)
+    &&(!conn->isMarkedForDisconnect()))
     {
       conn->write((uint8_t *)busyMsg.c_str(), busyMsg.length());
       conn->flush();
-      //can't confirm this even works...
-      delete conn;
+      conn->markForDisconnect();
     }
     conn = nextConn;
   }
+  
+  WiFiClientNode::checkForAutoDisconnections();
   
   if(pinSupport[pinDTR])
   {
@@ -249,6 +268,7 @@ void ZStream::loop()
       plussesInARow=0;
       if(current != 0)
       {
+        commandMode.sendOfficialResponse(ZOK);
         switchBackToCommandMode(false);
       }
     }

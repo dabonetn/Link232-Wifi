@@ -14,6 +14,8 @@
    limitations under the License.
 */
 
+#define ZSTREAM_ESC_BUF_MAX 10
+
 class ZStream : public ZMode
 {
   private:
@@ -21,15 +23,16 @@ class ZStream : public ZMode
     unsigned long lastNonPlusTimeMs = 0;
     unsigned long currentExpiresTimeMs = 0;
     unsigned long nextFlushMs = 0;
-    int plussesInARow=0;
+    int plussesInARow = 0;
     ZSerial serial;
-    int lastDTR=0;
+    int lastDTR = 0;
+    uint8_t escBuf[ZSTREAM_ESC_BUF_MAX];
     unsigned long nextAlarm = millis() + 5000;
-    unsigned const escSeqBufSize = 10;
-    const String busyMsg = "\r\n\r\n\r\n\r\n\r\nBUSY\r\n7\r\n";
     
     void switchBackToCommandMode(bool logout);
-    void socketWrite(uint8_t* buf, size_t count);
+    void socketWrite(uint8_t c);
+    void socketWrite(uint8_t *buf, uint8_t len);
+    void baudDelay();
 
     bool isPETSCII();
     bool isEcho();

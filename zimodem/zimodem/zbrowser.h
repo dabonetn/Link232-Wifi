@@ -26,7 +26,6 @@ class ZBrowser : public ZMode
     ZSerial serial;
 
     void switchBackToCommandMode();
-    void doModeCommand();
     String makePath(String addendum);
     String fixPathNoSlash(String path);
     String stripDir(String path);
@@ -37,6 +36,7 @@ class ZBrowser : public ZMode
     String cleanRemainArg(String line);
     bool isMask(String mask);
     bool matches(String fname, String mask);
+    void makeFileList(String ***l, int *n, String p, String mask, bool recurse);
     void deleteFile(String fname, String mask, bool recurse);
     void showDirectory(String path, String mask, String prefix, bool recurse);
     void copyFiles(String source, String mask, String target, bool recurse, bool overwrite);
@@ -53,5 +53,7 @@ class ZBrowser : public ZMode
     void switchTo();
     void serialIncoming();
     void loop();
+    void init();
+    void doModeCommand(String &line);
 };
 #endif

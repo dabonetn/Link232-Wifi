@@ -28,6 +28,11 @@ static void initSDShell()
 void ZBrowser::switchTo()
 {
   currMode=&browseMode;
+  init();
+}
+
+void ZBrowser::init()
+{
   serial.setFlowControlType(commandMode.serial.getFlowControlType());
   serial.setPetsciiMode(commandMode.serial.isPetsciiMode());
   savedEcho=commandMode.doEcho;
@@ -49,7 +54,8 @@ void ZBrowser::serialIncoming()
   {
     if(commandMode.doEcho)
       serial.prints(EOLN);
-    doModeCommand();
+    String line =commandMode.getNextSerialCommand();
+    doModeCommand(line);
   }
 }
 
@@ -380,6 +386,51 @@ void ZBrowser::copyFiles(String source, String mask, String target, bool recurse
   }
 }
 
+void ZBrowser::makeFileList(String ***l, int *n, String p, String mask, bool recurse)
+{
+  int maskFilterLen = p.length();
+  if(!p.endsWith("/"))
+    maskFilterLen++;
+
+  File root = SD.open(p);
+  if(!root)
+    serial.printf("Unknown path: %s%s",p.c_str(),EOLNC);
+  else
+  if(root.isDirectory())
+  {
+    File file = root.openNextFile();
+    while(file)
+    {
+      if(matches(file.name()+maskFilterLen, mask))
+      {
+        String fileName = file.name();
+        if(file.isDirectory())
+        {
+          if(recurse)
+          {
+            file = root.openNextFile();
+            makeFileList(l,n,fileName.c_str(),"*",recurse);
+          } 
+        }
+        else
+        {
+          file = root.openNextFile();
+          String **newList = (String **)malloc(sizeof(String *)*(*n+1));
+          for(int i=0;i<*n;i++)
+            newList[i]=(*l)[i];
+          free(*l);
+          newList[*n]=new String(fileName.c_str());
+          (*n)++;
+          *l=newList;
+        }
+      }
+      else
+        file = root.openNextFile();
+    }
+  }
+
+}
+
 void ZBrowser::deleteFile(String p, String mask, bool recurse)
 {
   int maskFilterLen = p.length();
@@ -493,9 +544,8 @@ void ZBrowser::showDirectory(String p, String mask, String prefix, bool recurse)
     serial.printf("  %s %lu%s",root.name(),root.size(),EOLNC);
 }
 
-void ZBrowser::doModeCommand()
+void ZBrowser::doModeCommand(String &line)
 {
-  String line = commandMode.getNextSerialCommand();
   char c='?';
   for(int i=0;i<line.length();i++)
   {
@@ -762,6 +812,70 @@ void ZBrowser::doModeCommand()
           {
             delay(2000);
             serial.printf("Upload failed (%s).%s",errors.c_str(),EOLNC);
+          }
+        }
+      }
+      else
+      if(cmd.equalsIgnoreCase("kget")||cmd.equalsIgnoreCase("rk"))
+      {
+        String rawPath = makePath(cleanOneArg(line));
+        String p=stripDir(rawPath);
+        String mask=stripFilename(rawPath);
+        String errors="";
+        String **fileList=(String**)malloc(sizeof(String *));
+        int numFiles=0;
+        makeFileList(&fileList,&numFiles,p,mask,true);
+        initKSerial(commandMode.getFlowControlType());
+        serial.printf("Go to Kermit download.%s",EOLNC);
+        serial.flushAlways();
+        if(kDownload(SD,fileList,numFiles,errors))
+        {
+          delay(2000);
+          serial.printf("Download completed successfully.%s",EOLNC);
+          serial.flushAlways();
+        }
+        else
+        {
+          delay(2000);
+          serial.printf("Download failed (%s).%s",errors.c_str(),EOLNC);
+          serial.flushAlways();
+        }
+        for(int i=0;i<numFiles;i++)
+          delete(fileList[i]);
+        delete(fileList);
+      }
+      else
+      if(cmd.equalsIgnoreCase("kput")||cmd.equalsIgnoreCase("sk"))
+      {
+        String p = makePath(cleanOneArg(line));
+        debugPrintf("kput:%s\n",p.c_str());
+        String dirNm=p;
+        File rootDir=SD.open(dirNm);
+        if((!rootDir)||(!rootDir.isDirectory()))
+        {
+          serial.printf("Path doesn't exist: %s%s",dirNm.c_str(),EOLNC);
+          if(rootDir)
+            rootDir.close();
+        }
+        else
+        {
+          String rootDirNm = rootDir.name();
+          rootDir.close();
+          String errors="";
+          serial.printf("Go to Kermit upload.%s",EOLNC);
+          serial.flushAlways();
+          initKSerial(commandMode.getFlowControlType());
+          if(kUpload(SD,rootDirNm,errors))
+          {
+            delay(2000);
+            serial.printf("Upload completed successfully.%s",EOLNC);
+            serial.flushAlways();
+          }
+          else
+          {
+            delay(2000);
+            serial.printf("Upload failed (%s).%s",errors.c_str(),EOLNC);
+            serial.flushAlways();
           }
         }
       }
@@ -1035,8 +1149,8 @@ void ZBrowser::doModeCommand()
         serial.printf("mv/move [-f] [/][path]file [/][path]file       - Move file(s)%s",EOLNC);
         serial.printf("cat/type [/][path]filename                     - View a file(s)%s",EOLNC);
         serial.printf("df/free/info                                   - Show space remaining%s",EOLNC);
-        serial.printf("xget/zget [/][path]filename                    - Download a file%s",EOLNC);
-        serial.printf("xput/zput [/][path]filename                    - Upload a file%s",EOLNC);
+        serial.printf("xget/zget/kget [/][path]filename               - Download a file%s",EOLNC);
+        serial.printf("xput/zput/kput [/][path]filename               - Upload a file%s",EOLNC);
         serial.printf("wget [http://url] [/][path]filename            - Download url to file%s",EOLNC);
         serial.printf("fget [ftp://user:pass@url/file] [/][path]file  - FTP get file%s",EOLNC);
         serial.printf("fput [/][path]file [ftp://user:pass@url/file]  - FTP put file%s",EOLNC);

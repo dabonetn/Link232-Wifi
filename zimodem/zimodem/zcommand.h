@@ -15,8 +15,11 @@
 */
 
 const int MAX_COMMAND_SIZE=256;
+static const char *CONFIG_FILE_OLD = "/zconfig.txt";
+static const char *CONFIG_FILE     = "/zconfig_v2.txt";
 #define ZI_STATE_MACHINE_LEN 7
 #define DEFAULT_TERMTYPE "Zimodem"
+#define DEFAULT_BUSYMSG "\r\nBUSY\r\n7\r\n"
 
 enum ZResult
 {
@@ -24,6 +27,7 @@ enum ZResult
   ZERROR,
   ZCONNECT,
   ZNOCARRIER,
+  ZNOANSWER,
   ZIGNORE,
   ZIGNORE_SPECIAL
 };
@@ -63,7 +67,12 @@ enum ConfigOptions
   CFG_PRINTDELAYMS=30,
   CFG_PRINTSPEC=31,
   CFG_TERMTYPE=32,
-  CFG_LAST=32
+  CFG_STATIC_IP=33,
+  CFG_STATIC_DNS=34,
+  CFG_STATIC_GW=35,
+  CFG_STATIC_SN=36,
+  CFG_BUSYMSG=37,
+  CFG_LAST=37
 };
 
 enum BinType
@@ -131,6 +140,7 @@ class ZCommand : public ZMode
     void sendConnectionNotice(int nodeId);
     void sendNextPacket();
     void connectionArgs(WiFiClientNode *c);
+    void updateAutoAnswer();
     uint8_t *doStateMachine(uint8_t *buf, int *bufLen, char **machineState, String *machineQue, char *stateMachine);
     uint8_t *doMaskOuts(uint8_t *buf, int *bufLen, char *maskOuts);
     ZResult doWebDump(Stream *in, int len, const bool cacheFlag);
@@ -165,7 +175,10 @@ class ZCommand : public ZMode
 
     ZCommand();
     void loadConfig();
+
     FlowControlType getFlowControlType();
+    int getConfigFlagBitmap();
+
     void sendOfficialResponse(ZResult res);
     void serialIncoming();
     void loop();

@@ -14,18 +14,18 @@
    limitations under the License.
 */
 
-enum LogMode
+enum LogOutputState
 {
-  NADA=0,
-  SocketIn=1,
-  SocketOut=2,
-  SerialIn=3,
-  SerialOut=4
+  LOS_NADA=0,
+  LOS_SocketIn=1,
+  LOS_SocketOut=2,
+  LOS_SerialIn=3,
+  LOS_SerialOut=4
 };
 
 static unsigned long expectedSerialTime = 1000;
 
-static bool logFileOpen = false;
+static boolean logFileOpen = false;
 static bool logFileDebug= false;
 static File logFile; 
 
@@ -37,6 +37,7 @@ static void logPrint(const char* msg);
 static void logPrintln(const char* msg);
 static void logPrintf(const char* format, ...);
 static void logPrintfln(const char* format, ...);
+static char *TOHEX(const char *s, char *hex, const size_t len);
 static char *TOHEX(long a);
 static char *TOHEX(int a);
 static char *TOHEX(unsigned int a);
@@ -44,4 +45,4 @@ static char *TOHEX(unsigned long a);
 static char *tohex(uint8_t a);
 static char *TOHEX(uint8_t a);
 static uint8_t FROMHEX(uint8_t a1, uint8_t a2);
-
+static char *FROMHEX(const char *hex, char *s, const size_t len);

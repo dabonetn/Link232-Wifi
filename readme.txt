@@ -41,7 +41,7 @@ Hardware Flow Control (CTS/RTS)
 
 
 
-The current zimodem firmware is forked from version "3.5.6"
+The current zimodem firmware is forked from version "3.6.3"
 
 To update to the current firmware use the command
 
@@ -55,10 +55,10 @@ Link232-Wifi is based off the ESP-12, not the ESP32, so No esp32 only features w
 
 Changes I've made.
 
-In Zimodem.ino I've set CTS/RTS and 19200 baud as standard, and got rid of the signal inversion while using a ESP8266 module.
+In Zimodem.ino I've set 19200 baud as standard, and got rid of the signal inversion while using a ESP8266 module.
 
-Zcommand.ino has many changes, first is replacing the zimmers.net with dabone.xyz to prevent a update and bricking of the Link232-Wifi.
-Also bug fixes for DCD on ata connect, and NO CARRIER printing while hardware flow control is enabled.
+Zcommand.ino mainly has me replacing the zimmers.net with dabone.xyz to prevent a update and bricking of the Link232-Wifi.
+
 
 
 
