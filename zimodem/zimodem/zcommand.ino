@@ -78,6 +78,7 @@ void ZCommand::setConfigDefaults()
 {
   doEcho=true;
   autoStreamMode=false;
+  telnetSupport=false;
   preserveListeners=false;
   ringCounter=1;
   serial.setFlowControlType(DEFAULT_FCT);
@@ -315,7 +316,7 @@ void ZCommand::reSaveConfig()
            "%s,%s,%s,"
            "%d,%s,%s,"
            "%s,%s,%s,%s,"
-           "%s", 
+           "%s,%d",
             wifiSSIhex.c_str(), wifiPWhex.c_str(), baudRate, eoln,
             serial.getFlowControlType(), doEcho, suppressResponses, numericResponses,
             longResponses, serial.isPetsciiMode(), dcdMode, serialConfig, ctsMode,
@@ -325,7 +326,7 @@ void ZCommand::reSaveConfig()
             zclockFormathex.c_str(),zclockHosthex.c_str(),hostnamehex.c_str(),
             printMode.getTimeoutDelayMs(),printSpechex.c_str(),termTypehex.c_str(),
             staticIPstr.c_str(),staticDNSstr.c_str(),staticGWstr.c_str(),staticSNstr.c_str(),
-            busyMsghex.c_str()
+            busyMsghex.c_str(),telnetSupport
             );
   f.close();
   delay(500);
@@ -440,6 +441,8 @@ void ZCommand::setOptionsFromSavedConfig(String configArguments[])
     ringCounter = atoi(configArguments[CFG_S0_RINGS].c_str());
   if(configArguments[CFG_S41_STREAM].length()>0)
     autoStreamMode = atoi(configArguments[CFG_S41_STREAM].c_str());
+  if(configArguments[CFG_S62_TELNET].length()>0)
+    telnetSupport = atoi(configArguments[CFG_S62_TELNET].c_str());
   if(configArguments[CFG_S60_LISTEN].length()>0)
   {
     preserveListeners = atoi(configArguments[CFG_S60_LISTEN].c_str());
@@ -492,19 +495,6 @@ void ZCommand::parseConfigOptions(String configArguments[])
     {
       if(str[i]==',')
       {
-        if(v2 &&
-          ((argn==CFG_WIFISSI)
-         ||(argn==CFG_WIFIPW)
-         ||(argn==CFG_TIMEZONE)
-         ||(argn==CFG_TIMEFMT)
-         ||(argn==CFG_TIMEURL)
-         ||(argn==CFG_PRINTSPEC)
-         ||(argn==CFG_HOSTNAME)
-         ||(argn==CFG_TERMTYPE)))
-        {
-          char hex[256];
-          configArguments[argn] = FROMHEX(configArguments[argn].c_str(),hex,256);
-        }
         if(argn<=CFG_LAST)
           argn++;
         else
@@ -513,12 +503,19 @@ void ZCommand::parseConfigOptions(String configArguments[])
       else
         configArguments[argn] += str[i];
     }
+    if(v2)
+    {
+      for(const ConfigOptions *opt = v2HexCfgs ; *opt != 255; opt++)
+      {
+        char hex[256];
+        configArguments[*opt] = FROMHEX(configArguments[*opt].c_str(),hex,256);
+      }
+    }
   }
 }
 
 void ZCommand::loadConfig()
 {
-  wifiConnected=false;
   if(WiFi.status() == WL_CONNECTED)
     WiFi.disconnect();
   setConfigDefaults();
@@ -546,7 +543,8 @@ void ZCommand::loadConfig()
   {
     debugPrintf("Connecting to %s\n",wifiSSI.c_str());
     connectWifi(wifiSSI.c_str(),wifiPW.c_str(),staticIP,staticDNS,staticGW,staticSN);
-    debugPrintf("Done connecting to %s\n",wifiSSI.c_str());
+    nextReconnectDelay = DEFAULT_RECONNECT_DELAY;
+    debugPrintf("Done attempting to connect to %s\n",wifiSSI.c_str());
   }
   debugPrintf("Reset start.\n");
   doResetCommand();
@@ -712,6 +710,8 @@ ZResult ZCommand::doInfoCommand(int vval, uint8_t *vbuf, int vlen, bool isNumber
       serial.printf("S57=%d",pinDSR);
     if(preserveListeners ||(showAll))
       serial.prints(preserveListeners ? "S60=1" : "S60=0");
+    if(!telnetSupport ||(showAll))
+      serial.prints(telnetSupport ? "S62=1" : "S62=0");
     if((serial.isPetsciiMode())||(showAll))
       serial.prints(serial.isPetsciiMode() ? "&P1" : "&P0");
     if((logFileOpen) || showAll)
@@ -902,7 +902,7 @@ ZResult ZCommand::doConnectCommand(int vval, uint8_t *vbuf, int vlen, bool isNum
         return ZERROR;
       debugPrintf("Connecting to %s\n",wifiSSI.c_str());
       bool doconn = connectWifi(wifiSSI.c_str(),wifiPW.c_str(),staticIP,staticDNS,staticGW,staticSN);
-      debugPrintf("Done connecting to %s\n",wifiSSI.c_str());
+      debugPrintf("Done attempting connect to %s\n",wifiSSI.c_str());
       return doconn ? ZOK : ZERROR;
     }
     if(vval == 0)
@@ -1207,13 +1207,22 @@ ZResult ZCommand::doUpdateFirmware(int vval, uint8_t *vbuf, int vlen, bool isNum
 
   uint8_t buf[255];
   int bufSize = 254;
-#ifdef ZIMODEM_ESP32
-  if((!doWebGetBytes("www.dabone.xyz", 80, "/otherprojs/guru-latest-version.txt", false, buf, &bufSize))||(bufSize<=0))
-    return ZERROR;
+  char firmwareName[100];
+#ifdef USE_DEVUPDATER
+  char *updaterHost = "192.168.2.7";
+  int updaterPort = 80;
 #else
-  if((!doWebGetBytes("www.dabone.xyz", 80, "/otherprojs/c64net-latest-version.txt", false, buf, &bufSize))||(bufSize<=0))
-    return ZERROR;
+  char *updaterHost = "www.dabone.xyz";
+  int updaterPort = 80;
 #endif
+#ifdef ZIMODEM_ESP32
+  char *updaterPrefix = "/otherprojs/guru";
+#else
+  char *updaterPrefix = "/otherprojs/c64net";
+#endif
+  sprintf(firmwareName,"%s-latest-version.txt",updaterPrefix);
+  if((!doWebGetBytes(updaterHost, updaterPort, firmwareName, false, buf, &bufSize))||(bufSize<=0))
+    return ZERROR;
 
   if((!isNumber)&&(vlen>2))
   {
@@ -1255,14 +1264,9 @@ ZResult ZCommand::doUpdateFirmware(int vval, uint8_t *vbuf, int vlen, bool isNum
   
   serial.printf("Updating to %s, wait for modem restart...",buf);
   serial.flush();
-  char firmwareName[100];
-#ifdef ZIMODEM_ESP32
-  sprintf(firmwareName,"/otherprojs/guru-firmware-%s.bin",buf);
-#else
-  sprintf(firmwareName,"/otherprojs/c64net-firmware-%s.bin",buf);
-#endif
+  sprintf(firmwareName,"%s-firmware-%s.bin", updaterPrefix, buf);
   uint32_t respLength=0;
-  WiFiClient *c = doWebGetStream("www.dabone.xyz", 80, firmwareName, false, &respLength); 
+  WiFiClient *c = doWebGetStream(updaterHost, updaterPort, firmwareName, false, &respLength);
   if(c==null)
   {
     serial.prints(EOLN);
@@ -1299,7 +1303,7 @@ ZResult ZCommand::doUpdateFirmware(int vval, uint8_t *vbuf, int vlen, bool isNum
   delete c;
   serial.prints("Done");
   serial.prints(EOLN);
-  serial.prints("Modem will now restart. If restart fails, you might need to power-cycle or reset your modem.");
+  serial.prints("Modem will now restart, but you should power-cycle or reset your modem.");
   ESP.restart();
   return ZOK;
 }
@@ -1547,6 +1551,8 @@ ZResult ZCommand::doDialStreamCommand(unsigned long vval, uint8_t *vbuf, int vle
   else
   {
     ConnSettings flags(dmodifiers);
+    if(!telnetSupport)
+      flags.setFlag(FLAG_TELNET, false);
     int flagsBitmap = flags.getBitmap(serial.getFlowControlType());
     char *colon=strstr((char *)vbuf,":");
     int port=23;
@@ -1985,6 +1991,14 @@ ZResult ZCommand::doSerialCommand()
   &&(strcmp(sbuf.c_str(),"%!PS")==0))
   {
     result = printMode.switchToPostScript("%!PS\n");
+    sendOfficialResponse(result);
+    return result;
+  }
+  else
+  if((sbuf.length()==12)
+  &&(strcmp(sbuf.c_str(),"\x04grestoreall")==0))
+  {
+    result = printMode.switchToPostScript("%!PS\ngrestoreall\n");
     sendOfficialResponse(result);
     return result;
   }
@@ -2439,6 +2453,8 @@ ZResult ZCommand::doSerialCommand()
                else
                  result=ZERROR;
                  break;
+             case 62:
+               telnetSupport = (sval > 0);
              default:
                 break;
               }
@@ -2470,6 +2486,14 @@ ZResult ZCommand::doSerialCommand()
               browseMode.doModeCommand(line);
             }
         }
+#  ifdef INCLUDE_HOSTCM
+        else
+        if((strstr((const char *)vbuf,"hostcm")==(char *)vbuf))
+        {
+            result = ZOK;
+            hostcmMode.switchTo();
+        }
+#  endif
 #endif
         else
         if((strstr((const char *)vbuf,"print")==(char *)vbuf)||(strstr((const char *)vbuf,"PRINT")==(char *)vbuf))
@@ -2571,7 +2595,6 @@ ZResult ZCommand::doSerialCommand()
             if(WiFi.status() == WL_CONNECTED)
               WiFi.disconnect();
             wifiSSI="";
-            wifiConnected=false;
             delay(500);
             zclock.reset();
             result=doResetCommand();
@@ -3027,7 +3050,7 @@ void ZCommand::showInitMessage()
   serial.prints(commandMode.EOLN);
   if(wifiSSI.length()>0)
   {
-    if(wifiConnected)
+    if(WiFi.status() == WL_CONNECTED)
       serial.prints(("CONNECTED TO " + wifiSSI + " (" + WiFi.localIP().toString().c_str() + ")").c_str());
     else
       serial.prints(("ERROR ON " + wifiSSI).c_str());
@@ -3597,4 +3620,3 @@ void ZCommand::loop()
   }
   checkBaudChange();
 }
-

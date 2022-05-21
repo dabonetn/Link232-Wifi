@@ -14,10 +14,11 @@
    limitations under the License. 
 */
 //#define TCP_SND_BUF                     4 * TCP_MSS
-#define ZIMODEM_VERSION "3.6.3"
+#define ZIMODEM_VERSION "3.7.0"
 const char compile_date[] = __DATE__ " " __TIME__;
 #define DEFAULT_NO_DELAY true
 #define null 0
+//# define USE_DEVUPDATER true // only enable this if your name is Bo
 
 #ifdef ARDUINO_ESP32_DEV
 # define ZIMODEM_ESP32
@@ -85,6 +86,7 @@ const char compile_date[] = __DATE__ " " __TIME__;
 # define echoEOLN serial.write
 //# define HARD_DCD_HIGH 1
 //# define HARD_DCD_LOW 1
+//# define INCLUDE_HOSTCM true // do this for special SP9000 modems only
 #else  // ESP-8266, e.g. ESP-01, ESP-12E, inverted for C64Net WiFi Modem
 # define DEFAULT_PIN_DSR 13
 # define DEFAULT_PIN_DTR 12
@@ -131,7 +133,8 @@ const char compile_date[] = __DATE__ " " __TIME__;
 #define DEFAULT_SERIAL_CONFIG SERIAL_8N1
 #define MAX_PIN_NO 50
 #define INTERNAL_FLOW_CONTROL_DIV 380
-
+#define DEFAULT_RECONNECT_DELAY 5000
+#define MAX_RECONNECT_DELAY 1800000
 
 class ZMode
 {
@@ -157,11 +160,17 @@ class ZMode
 #include "zprint.h"
 
 #ifdef INCLUDE_SD_SHELL
-#include "proto_xmodem.h"
-#include "proto_zmodem.h"
-#include "proto_kermit.h"
-#include "zbrowser.h"
+#  ifdef INCLUDE_HOSTCM
+#    include "zhostcmmode.h"
+#  endif
+#  include "proto_xmodem.h"
+#  include "proto_zmodem.h"
+#  include "proto_kermit.h"
+#  include "zbrowser.h"
 #endif
+#  ifdef INCLUDE_SLIP
+#    include "zslipmode.h"
+#  endif
 
 static WiFiClientNode *conns = null;
 static WiFiServerNode *servs = null;
@@ -177,10 +186,16 @@ static ZStream streamMode;
 static ZCommand commandMode;
 static ZPrint printMode;
 static ZConfig configMode;
-#ifdef INCLUDE_SD_SHELL
-static ZBrowser browseMode;
-#endif
 static RealTimeClock zclock(0);
+#ifdef INCLUDE_SD_SHELL
+#  ifdef INCLUDE_HOSTCM
+     static ZHostCMMode hostcmMode;
+#  endif
+   static ZBrowser browseMode;
+#endif
+#ifdef INCLUDE_SLIP
+   static ZSLIPMode slipMode;
+#endif
 
 enum BaudState
 {
@@ -190,7 +205,6 @@ enum BaudState
   BS_SWITCH_NORMAL_NEXT
 };
 
-static bool wifiConnected =false;
 static String wifiSSI;
 static String wifiPW;
 static String hostname;
@@ -198,6 +212,8 @@ static IPAddress *staticIP = null;
 static IPAddress *staticDNS = null;
 static IPAddress *staticGW = null;
 static IPAddress *staticSN = null;
+static unsigned long lastConnectAttempt = 0;
+static unsigned long nextReconnectDelay = 0; // zero means don't attempt reconnects
 static SerialConfig serialConfig = DEFAULT_SERIAL_CONFIG;
 static int baudRate=DEFAULT_BAUD_RATE;
 static int dequeSize=1+(DEFAULT_BAUD_RATE/INTERNAL_FLOW_CONTROL_DIV);
@@ -296,20 +312,29 @@ static bool connectWifi(const char* ssid, const char* password, IPAddress *ip, I
     setHostName(hostname.c_str());
   bool amConnected = (WiFi.status() == WL_CONNECTED) && (strcmp(WiFi.localIP().toString().c_str(), "0.0.0.0")!=0);
   int WiFiCounter = 0;
-  while ((!amConnected) && (WiFiCounter < 30))
+  while ((!amConnected) && (WiFiCounter < 20))
   {
     WiFiCounter++;
     if(!amConnected)
       delay(500);
     amConnected = (WiFi.status() == WL_CONNECTED) && (strcmp(WiFi.localIP().toString().c_str(), "0.0.0.0")!=0);
   }
-  wifiConnected = amConnected;
+  lastConnectAttempt = millis();
+  if(lastConnectAttempt == 0)
+    lastConnectAttempt = 1; // 0 is a special case, so skip it
+
   if(!amConnected)
+  {
+    nextReconnectDelay = 0; // assume no retry is desired.. let the caller set it up, as it could be bad PW
     WiFi.disconnect();
+  }
+  else
+    nextReconnectDelay = DEFAULT_RECONNECT_DELAY; // if connected, we always want to try reconns in the future
+
 #ifdef SUPPORT_LED_PINS
-  s_pinWrite(DEFAULT_PIN_WIFI,wifiConnected?DEFAULT_WIFI_ACTIVE:DEFAULT_WIFI_INACTIVE);
+  s_pinWrite(DEFAULT_PIN_WIFI,(WiFi.status() == WL_CONNECTED)?DEFAULT_WIFI_ACTIVE:DEFAULT_WIFI_INACTIVE);
 #endif
-  return wifiConnected;
+  return (WiFi.status() == WL_CONNECTED);
 }
 
 static void checkBaudChange()
@@ -445,6 +470,29 @@ void setup()
 #endif
 }
 
+void checkReconnect()
+{
+  if((WiFi.status() != WL_CONNECTED)
+  &&(nextReconnectDelay>0)
+  &&(lastConnectAttempt>0)
+  &&(wifiSSI.length()>0))
+  {
+     unsigned long now=millis();
+     if(lastConnectAttempt > now)
+       lastConnectAttempt=1;
+     if(now > lastConnectAttempt + nextReconnectDelay)
+     {
+        debugPrintf("Attempting Reconnect to %s\n",wifiSSI.c_str());
+        unsigned long oldReconnectDelay = nextReconnectDelay;
+        if(!connectWifi(wifiSSI.c_str(),wifiPW.c_str(),staticIP,staticDNS,staticGW,staticSN))
+          debugPrintf("%sUnable to reconnect to %s.\n",wifiSSI.c_str());
+        nextReconnectDelay = oldReconnectDelay * 2;
+        if(nextReconnectDelay > MAX_RECONNECT_DELAY)
+          nextReconnectDelay = DEFAULT_RECONNECT_DELAY;
+     }
+  }
+}
+
 void checkFactoryReset()
 {
 #ifdef ZIMODEM_ESP32
@@ -478,7 +526,6 @@ void checkFactoryReset()
           dcdStatus = dcdInactive;
           s_pinWrite(pinDCD,dcdStatus);
           wifiSSI="";
-          wifiConnected=false;
           delay(500);
           zclock.reset();
           commandMode.reset();
@@ -495,6 +542,7 @@ void checkFactoryReset()
 void loop() 
 {
   checkFactoryReset();
+  checkReconnect();
   if(HWSerial.available())
   {
     currMode->serialIncoming();

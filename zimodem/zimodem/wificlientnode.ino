@@ -204,6 +204,12 @@ int WiFiClientNode::peek()
 void WiFiClientNode::flush()
 {
   if((host != null)&&(client.available()==0))
+    flushAlways();
+}
+
+void WiFiClientNode::flushAlways()
+{
+  if(host != null)
   {
     flushOverflowBuffer();
     client.flush();
@@ -318,6 +324,12 @@ size_t WiFiClientNode::write(const uint8_t *buf, size_t size)
   }
   */
   return written;
+}
+
+void WiFiClientNode::print(String s)
+{
+  int size=s.length();
+  write((const uint8_t *)s.c_str(),size);
 }
 
 String WiFiClientNode::readLine(unsigned int timeout)

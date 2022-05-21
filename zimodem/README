@@ -1,16 +1,16 @@
-C64Net WiFi Firmware  / Zimodem 3.6.3 (C)2016-2021 Bo Zimmerman
+Zimodem 3.6.4 (C)2016-2021 Bo Zimmerman
 Please read the LICENSE file for license information
 Please read the NOTICE file for credits information
 
 Intro:
 ------
-This firmware code, "C64Net WiFi Firmware", provides an api for communication between a serial terminal and the ESP8266 or ESP32.  It simulates the old-style Hayes "AT" commands, so that the ESP8266 appears to the terminal as if it were a Hayes modem.  These "AT" commands may then be issued to the ESP8266 in order to force it to connect to a wireless access point, and from there to make one or more manageable connections to the internet.  It also includes a streaming serial "telnet" mode, and server/port listener capabilities.
+This firmware code provides an api for communication between a serial terminal and the ESP8266 or ESP32.  It simulates the old-style Hayes "AT" commands, so that the ESP8266 appears to the terminal as if it were a Hayes modem.  These "AT" commands may then be issued to the ESP8266 in order to force it to connect to a wireless access point, and from there to make one or more manageable connections to the internet.  It also includes a streaming serial "telnet" mode, and server/port listener capabilities.
 
 The default baud rate that the firmware establishes is 1200.  Be sure to use the commands below to set this to the proper baud rate for your terminal/host computer.  If you plan on using the Commodore 8-bit utilities, keep the firmware baud rate saved at 1200.
 
 Building:
 ---------
-To build this firmware for the ESP-01 or ESP-12, I used the Arduino IDE rev1.8.10 with the latest Arduino ESP8266 libraries using the Generic ESP8266 Module. Install the libraries from the Boards Manager using http://arduino.esp8266.com/stable/package_esp8266com_index.json . Both versions of the firmware are built with SPIFFS enabled.  On the ESP8266, I used settings of 1M/160k, but you may want to alter that depending on your hardware and needs. 
+To build this firmware for the ESP-01 or ESP-12, I used the Arduino IDE rev1.8.10 with the 2.7.4 Arduino ESP8266 libraries using the Generic ESP8266 Module.  Versions newer than 2.7.4 may not work.  Install the libraries from the Boards Manager using http://arduino.esp8266.com/stable/package_esp8266com_index.json. Both versions of the firmware are built with SPIFFS enabled.  On the ESP8266, I used settings of 1M/160k, but you may want to alter that depending on your hardware and needs. 
 
 To build this firmware for the ESP-32, I also used the Arduino IDE rev 1.8.10 with the Arduino ESP32 Dev Module installed from the board manager * , with the following settings: QIO, 4MB, 80MHZ, 921600, NONE, Avrisp Mk II **.  I found that baud changing corrupts the serial bus as of 1/13/2018, so the following changes were made to the base libraries: 
 > Added to esp32-hal-uart.c:
@@ -202,6 +202,7 @@ ATS56=n : Changes DSR status. n=0 is default DSR=HIGH=active. n=1 is RTS=LOW=act
 ATS57=n : Changes DSR pin number, n=13 is default (N/A on ESP01)
 ATS60=n : When n > 0, immediately saves existing listeners and automatically restores them later. n=0 to clear.
 ATS61=n : When n > 0, sets the number of seconds to timeout a print job stream (AT+PRINT). Default is 5 seconds
+ATS62=n : When n > 0, enables/disables telnet support in the ATD (Dial) command. Default is 1 (enabled).
 
 +++ : With a 1 second pause with no other characters afterwards, this will disconnect the current opened connection.
 
