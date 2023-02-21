@@ -1,7 +1,7 @@
 Usage Notes
 
-128 Users. I noticed on DESTERM and Dialogue 128, that if you have the modem set to hangup on DTR drop, the modem will hang up
-trying to download. To disable this function, enter the command
+128 Users. I noticed on DESTERM and Dialogue 128, that if you have the modem set to hangup on DTR drop,
+the modem will hang up trying to download. To disable this function, enter the command
 ats54=2 then press enter, then at&w then enter to save it to the modem.
 After this, you have to use the +++, wait and then ATH for hangup on your side.
 
