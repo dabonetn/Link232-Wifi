@@ -1,5 +1,9 @@
 Usage Notes
 
+BBS Host Mode.
+The current BBS host mode enables a local echo by default, so to make it actually work with bbs software, when you enable
+bbs host in the at+config menu, in the bbs host submenu, make sure echo is set to off.
+
 128 Users. I noticed on DESTERM and Dialogue 128, that if you have the modem set to hangup on DTR drop,
 the modem will hang up trying to download. To disable this function, enter the command
 ats54=2 then press enter, then at&w then enter to save it to the modem.
