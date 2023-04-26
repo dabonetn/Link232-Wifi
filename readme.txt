@@ -40,6 +40,9 @@ Flying leads then connect the IO address (DE00/DF00/Or D700) and Dotclock.
 All of them use swiftlink drivers in your favorite terminal program/bbs.
 CCGMS/Novaterm/Desterm/etc.. 
 
+For Centipede 128 BBS software, new Swiftlink drivers for address DF00 and D700 are located under the SoftwarePatches directory.
+(It only had DE00 by default)
+
 
 Premade units are usually available on ebay from me.
 
